@@ -1,0 +1,12 @@
+{
+  "name": "Mind Isle",
+  "short_name": "Palace",
+  "description": "A pixel-art island built from your notes.",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#cde6ea",
+  "theme_color": "#e0703a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

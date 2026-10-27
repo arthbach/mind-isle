@@ -1,0 +1,35 @@
+{
+  "name": "mind-isle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Your second brain and your AI agents, as a pixel-art island. Built from Obsidian notes and Orca, Claude Code and Codex sessions.",
+  "scripts": {
+    "dev": "next dev",
+    "dev:phone": "next dev -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "start:phone": "next start -H 0.0.0.0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "next build && playwright test",
+    "check": "npm run typecheck && npm test && npm run test:e2e"
+  },
+  "engines": {
+    "node": ">=20.9"
+  },
+  "dependencies": {
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^20.19.43",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "~5.9",
+    "vitest": "^3.2.7"
+  }
+}
