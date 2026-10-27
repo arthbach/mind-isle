@@ -81,7 +81,6 @@ test('three running sessions are three workers, and a permission request shows u
   await page.getByRole('button', { name: 'Show all 5 sessions' }).click();
   await expect(page.locator('.live-card')).toHaveCount(5); // …until asked
   await expect(page.locator('.live-card.inferred')).toHaveCount(1);
-  // Fold it back: at CI's viewport the full strip covers the Lighthouse pin clicked below.
   await page.getByRole('button', { name: 'Show fewer' }).click();
   await expect(page.locator('.live-card')).toHaveCount(4);
 
@@ -101,10 +100,13 @@ test('three running sessions are three workers, and a permission request shows u
   await expect(page.locator('.live-card').first()).toHaveAttribute('data-state', 'needs_you');
 
   // Clicking the pin (or a strip card) selects the building and lists its sessions.
+  // Fold the strip first: with Linux fonts (CI) it is tall enough to cover the Lighthouse pin.
+  await page.getByRole('button', { name: 'Hide live sessions' }).click();
   await pin.click();
   await expect(page.getByRole('heading', { name: 'Live sessions' })).toBeVisible();
   await expect(page.locator('aside [data-state]')).toHaveCount(3);
   await page.getByRole('button', { name: 'Close inspector' }).click();
+  await page.getByRole('button', { name: 'Show live sessions' }).click();
   await page.locator('.live-card.needs_you').click();
   await expect(page.locator('aside [data-state]')).toHaveCount(3);
 });
