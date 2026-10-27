@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { defineConfig } from '@playwright/test';
 
+// Servers are polled at /login, which never reads the vault: Playwright starts them before
+// globalSetup copies the demo vault in.
 // Two servers over the same throwaway vault, pinned to the morning and the evening of one day.
 // Explicit env always wins over .env.local, so these runs can never reach a real vault.
 const env = (now: string) => ({
@@ -43,10 +45,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: [
-    { command: 'npx next start -p 3301', url: `${MORNING}/hall`, env: env('2026-10-26T08:00:00Z'), reuseExistingServer: false, timeout: 60_000 },
-    { command: 'npx next start -p 3302', url: `${EVENING}/hall`, env: env('2026-10-26T19:00:00Z'), reuseExistingServer: false, timeout: 60_000 },
+    { command: 'npx next start -p 3301', url: `${MORNING}/login`, env: env('2026-10-26T08:00:00Z'), reuseExistingServer: false, timeout: 60_000 },
+    { command: 'npx next start -p 3302', url: `${EVENING}/login`, env: env('2026-10-26T19:00:00Z'), reuseExistingServer: false, timeout: 60_000 },
     {
-      command: 'npx next start -p 3303', url: `${SESSIONS}/hall`, reuseExistingServer: false, timeout: 60_000,
+      command: 'npx next start -p 3303', url: `${SESSIONS}/login`, reuseExistingServer: false, timeout: 60_000,
       env: { ...env('2026-10-26T19:00:00Z'), PALACE_CHECKIN_GATE: 'off', PALACE_DATA_DIR: path.resolve('.palace-e2e/data-sessions') },
     },
   ],
