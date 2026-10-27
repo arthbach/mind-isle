@@ -81,6 +81,9 @@ test('three running sessions are three workers, and a permission request shows u
   await page.getByRole('button', { name: 'Show all 5 sessions' }).click();
   await expect(page.locator('.live-card')).toHaveCount(5); // …until asked
   await expect(page.locator('.live-card.inferred')).toHaveCount(1);
+  // Fold it back: at CI's viewport the full strip covers the Lighthouse pin clicked below.
+  await page.getByRole('button', { name: 'Show fewer' }).click();
+  await expect(page.locator('.live-card')).toHaveCount(4);
 
   // The real hook script, as Claude Code would run it.
   const r = spawnSync('node', ['scripts/palace-hook.mjs', '--mind-palace-hook', 'claude', events], {
