@@ -6,6 +6,7 @@ const PAGES = [
   { href: '/settings/sound', icon: '♫', title: 'Sound', text: 'Music, volume, song, sound effects.' },
   { href: '/settings/display', icon: '☀', title: 'Display', text: 'Day or night, and which HUD panels show.' },
   { href: '/settings/agents', icon: '⚓', title: 'Agents', text: 'Which agent apps to read sessions from, and live hooks.' },
+  { href: '/settings/summaries', icon: '📜', title: 'Summaries', text: 'Turn finished sessions into notes in your vault, and with which CLI.' },
 ];
 
 export default async function SettingsPage() {
@@ -25,7 +26,7 @@ export default async function SettingsPage() {
       </ul>
       <p className="tiny muted">
         Built from {w.noteCount} notes in <b>{w.vaultName}</b> · everything stays on this machine.
-        World, Sound and Display are saved in this browser; Agents is saved with the app’s data.
+        World, Sound and Display are saved in this browser; Agents and Summaries are saved in your vault, in <code>Mind Isle/Settings.md</code>.
       </p>
     </div>
   );

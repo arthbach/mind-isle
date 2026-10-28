@@ -5,9 +5,9 @@ import type { Decision } from './mapping';
 import type { SourceId } from './types';
 
 /**
- * Session settings that have no home in the vault yet: which sources the user allowed,
- * and per-folder mapping decisions. (Confirmed mappings are also written to the project note's `repos:`.)
- * Phase C moves the consents into the vault's settings note.
+ * Per-folder mapping decisions (confirmed mappings are also written to the project note's `repos:`).
+ * Source consents live in the vault's settings note (lib/settings.ts); `sources` here only holds
+ * choices made before that note existed, or while the app is read-only.
  */
 export interface SessionStore {
   sources: Partial<Record<SourceId, boolean>>;

@@ -1,4 +1,4 @@
-import { Lanterns, QuestBoard, SealVote } from '@/components/Boards';
+import { Lanterns, SealVote } from '@/components/Boards';
 import { Checkin } from '@/components/Checkin';
 import { fmtDate } from '@/lib/game';
 import { getWorld } from '@/lib/world';
@@ -9,12 +9,7 @@ export default async function TodayPage() {
   return (
     <div className="stack">
       <Checkin world={w} />
-      <div className="three">
-        <div className="panel card">
-          <h2>Tick off a quest</h2>
-          <p className="sub">Finished a task from your vault? Check it here and it’s marked done in its note.</p>
-          <QuestBoard quests={w.quests} total={w.questTotal} vaultName={w.vaultName} readOnly={w.readOnly} />
-        </div>
+      <div className="two">
         <div className="panel card">
           <h2>Fading lanterns</h2>
           <p className="sub">People who come up often in your notes but have gone quiet.</p>

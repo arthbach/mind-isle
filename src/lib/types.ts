@@ -13,6 +13,8 @@ export interface Project {
   venture: boolean;
   summary: string;
   aliases: string[];
+  /** Dated lines from the note's `## Log`, newest first. */
+  log: { date: string; text: string }[];
 }
 
 export interface Person {
@@ -50,6 +52,22 @@ export interface Decision {
 }
 
 export type BeliefStatus = 'proposed' | 'confirmed' | 'adjusted' | 'rejected';
+
+export type WorldviewArea = 'values' | 'faith' | 'civic';
+
+/** A worldview banner: sensitive, owner-only, never on /hall or the island, never AI context unless `useInAi`. */
+export interface WorldviewBanner {
+  id: string;
+  text: string;
+  area: WorldviewArea;
+  status: BeliefStatus;
+  /** 'scan' and 'interview' were proposed by Mind Isle; 'manual' the user wrote. */
+  source: 'scan' | 'interview' | 'manual';
+  evidence: { quote: string; note: string | null }[];
+  useInAi: boolean;
+  path: string;
+  created: string | null;
+}
 
 export interface Belief {
   id: string;
@@ -123,9 +141,12 @@ export interface DayEntry {
 export interface Attribute {
   key: string;
   label: string;
+  /** 0–100 over the last 30 days. */
   value: number;
   detail: string;
   color: string;
+  /** The "why?" breakdown: each input over the last 30 days next to the user's usual 30 days. */
+  why?: { label: string; recent: string; usual: string }[];
 }
 
 export interface CalendarDay {
@@ -147,6 +168,8 @@ export interface World {
   lanterns: Person[];
   decisions: Decision[];
   beliefs: Belief[];
+  /** Kept apart from `beliefs`, which feed the island and other views. */
+  worldview: WorldviewBanner[];
   achievements: Achievement[];
   bets: Bet[];
   quests: Quest[];

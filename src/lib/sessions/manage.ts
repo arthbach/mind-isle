@@ -1,6 +1,7 @@
 // Everything the Sessions page changes. Kept free of Next.js APIs so it can be unit-tested.
 import path from 'node:path';
 import { today } from '../clock';
+import { updateSettings } from '../settings';
 import { assertWritable, readFrontmatterList, setFrontmatterList, updateNote } from '../vault/writer';
 import { invalidateSessions, projectRefs, scanFolders } from './index';
 import { hooksInstalled, installHooks, uninstallHooks } from './hooks';
@@ -20,13 +21,14 @@ export async function setSourceEnabled(source: string, on: boolean) {
   const s = assertSource(source);
   // Turning a source off also removes any hooks we installed for it.
   if (!on) for (const root of discoverRoots()[s]) await uninstallHooks(root);
-  await updateSessionStore((st) => { st.sources[s] = on; });
+  await updateSettings({ sources: { [s]: on }, ...(on ? {} : { hooks: { [s]: false } }) });
   invalidateSessions();
 }
 
 export async function setSourceHooks(source: string, on: boolean) {
   const s = assertSource(source);
   for (const root of discoverRoots()[s]) await (on ? installHooks(root) : uninstallHooks(root));
+  await updateSettings({ hooks: { [s]: on } });
 }
 
 export async function sourceStatus() {

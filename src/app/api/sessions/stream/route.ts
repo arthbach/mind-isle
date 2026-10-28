@@ -1,4 +1,6 @@
 import { liveSnapshot } from '@/lib/sessions';
+import { syncRecordsSoon } from '@/lib/sessions/records';
+import { tick } from '@/lib/summaries';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -14,6 +16,8 @@ export async function GET(req: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const push = async () => {
+        // Keep session records current and work through queued summaries (both throttled to once a minute).
+        void syncRecordsSoon().then(() => tick()).catch(() => {});
         try {
           const snap = await liveSnapshot();
           // Compare without the timestamp, so nothing is sent unless something actually changed.

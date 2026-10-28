@@ -32,6 +32,16 @@ test('/today shows the same check-in inline, and Dawn writes the plan into the d
   await page.goto(`${MORNING}/today`);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.checkin')).toHaveCount(1);
+
+  // Quests already settled can be closed straight from the board, in their own notes.
+  const LH = '03 Projects/Lighthouse App/Lighthouse App.md';
+  await page.getByRole('button', { name: 'Already done: Interview five churned beta users' }).click();
+  await expect(page.getByRole('button', { name: /Add to today: Interview five churned/ })).toHaveCount(0);
+  expect(read(LH)).toContain('- [x] Interview five churned beta users ⏫ #lighthouse ✅ 2026-10-26');
+  await page.getByRole('button', { name: 'Not doing: Write the pricing page copy' }).click();
+  await expect(page.getByRole('button', { name: /Add to today: Write the pricing page copy/ })).toHaveCount(0);
+  expect(read(LH)).toContain('- [-] Write the pricing page copy #lighthouse ❌ 2026-10-26');
+
   const add = page.getByLabel('Add a plan item');
   await add.fill('Ship the new onboarding flow');
   await add.press('Enter');

@@ -102,6 +102,57 @@ Where it looks (each can be overridden):
 | Codex | `$CODEX_HOME` or `~/.codex` (`PALACE_CODEX_DIR`) |
 | Orca | its app-data folder, e.g. `~/Library/Application Support/orca` on macOS (`PALACE_ORCA_DIR`) |
 
+### Session summaries (optional)
+
+Turn them on in **Settings → Summaries**. When a session has been quiet for 2 hours, Mind Isle can write a note about it to `Sessions/` in your vault: a summary, decisions (they appear in the Codex) and follow-ups (they appear on the quest board).
+
+- **Ask** (default) waits for your yes on each session; **Always** writes them on its own; **Never** never opens the transcript. A project note can override this with `summaries: ask|auto|off`.
+- Summaries are written by your own CLI on your computer (`claude -p` with a small model, or `codex exec`), with no tools and no saved session.
+- Before the transcript leaves Mind Isle, keys, passwords, tokens, `.env` values, emails and phone numbers are removed. Add your own words to remove (a client's name, say) under `redact_patterns` in `Mind Isle/Settings.md`.
+- Sessions that ended before you turned summaries on are never touched. Every session still gets a metadata record (times, files, the agent's title) in the History list.
+
+## Worldview banners (optional)
+
+The Banner Wall has a **Worldview wing** for values, faith and spirituality, and civic views. It follows stricter rules than the rest of the app:
+
+- Nothing is read until you choose what may be: all notes, chosen folders, only session notes, or **interview only** (nothing is read; Atlas asks one question a day at Dusk).
+- Only your own first-person lines count. Quotes, `Name:` lines and "she said…" are skipped, and people notes are never read.
+- Every banner is a proposal with your exact words as evidence; anything the AI can't quote word for word is dropped. No demographic traits are ever inferred.
+- Banners live in `Mind Isle/Worldview/`, stay blurred until you tap Reveal, never appear on the island or the public Hall, and are never given to an AI unless you switch that on for a banner.
+- **Forget** deletes everything Mind Isle proposed (confirmed banners only after a second yes) and stops looking.
+
+## Your character
+
+The **Character** page shows six attributes for the **last 30 days**, each with a "why?" breakdown:
+
+| Attribute | What counts |
+|---|---|
+| Builder | projects that moved, active hours with your agents, tasks completed |
+| Follow-through | how much of your Dawn plan got done (partly counts half) |
+| Diplomat | different people you were in touch with |
+| Strategist | decisions sealed and judged, plus how often your calls were right |
+| Sage | beliefs confirmed or adjusted, reflections written at Dusk |
+| Chronicler | days with a Dawn or Dusk check-in (note count doesn't matter) |
+
+50 means your usual pace (your 90-day average), 100 twice that; Follow-through and Chronicler are plain percentages. Your class is this month's strongest attribute. XP keeps growing for levels, but nothing rewards raw note volume.
+
+Your avatar comes only from what you enter: MBTI (or a 4-question quiz) picks the outfit (scholar, bard, knight or ranger), extraverts carry a banner and introverts get a companion, Enneagram adds an emblem, and Big Five works as an alternative. Hair, skin tone and colour are always your choice. It's saved in `Mind Isle/Settings.md`.
+
+## The civilization
+
+Your people are villagers, and Atlas is the Owner of the isle.
+
+- **Shells 🐚** are earned from what you actually do, read from the vault: a ticked quest (1–3 by priority, at most 10 a day), a Dawn plan item done (2), Dawn and Dusk (2 each), a conversation (3), bringing someone back (10), a project update or session note (1), a decision judged (2).
+- **Villagers live and die by contact.** Contact dates come from meeting `attendees`, the People section of daily notes, `last_contact` and `first_met`. Each person has a clock set by `circle:` in their note (close: sick at 10 days, ghost after 21; client: 14/30; network: 45/90). A ghost keeps a grave on the island until you talk again; then they're reborn, and their life count goes up. `in_memoriam: true` gives a golden spirit that never decays. Your own person note needs `self: true` (or set `PALACE_OWNER_NAME`).
+- **Atlas builds overnight**, one thing a night, for the worst problem first: a Clinic where someone is sick (7 more days before they die), a Post Office where people drift (a letter idea at Dawn), a Shrine where ghosts gather, a Tavern where you talk most, a Library and a Market for the whole island. Buildings cost weekly upkeep; unpaid ones close until there's money again. Dawn opens with what it did and why; **Treasury** (key 9) shows the ledger, who needs you and what's next.
+
+- **Events.** Calm villages (nobody sick, fewer than three ghosts) hold a festival every two weeks, when conversations there pay +3. Three days in a row with nothing earned bring a storm that breaks a building until Atlas mends it. Add `birthday: 04-12` to a person's note and Dawn reminds you; a message on the day pays +5.
+- **The weekly challenge.** Atlas picks the village most in need ("Reach 2 of these 5 people by Sunday"), or a quest goal when nobody is. Win it for Shells and a festival there.
+- **Levels and Wonders.** Buildings go up to level 3 by what happens around them (a Clinic by people brought back, a Tavern by festivals…), then Atlas pays for the upgrade. Three Wonders unlock by what you do in the year: the Great Lighthouse (60 nights in a row with nobody dying), the World Tree (20 people brought back) and the Grand Archive (60 Dawns locked). They stand on the Plaza, new land south of Home. When every village of three or more has all four buildings and nobody is sick, a **Golden Age** begins.
+- **Eras.** On New Year's night Atlas closes the year: the chronicle goes to `Mind Isle/Eras/<year>.md` in your vault, and it sails to a new island with a quarter of the treasury, blueprints (rebuilding costs half) and a statue of each Wonder. Your people come along, alive or not. **Treasury → The year so far** shows this year's chronicle as it's being written.
+
+Only Atlas's state is stored (`.palace/isle.json`: spending, buildings, festivals, storms, challenges, past Eras); Shells and lives are recomputed from your notes.
+
 ## Seasons
 
 Pick the island's season in **Settings → World**: **Spring, Summer, Autumn, Winter, Dry season or Wet season**, each with its own palette and weather. **Auto** (the default) follows the real season where you live, worked out from `PALACE_TIMEZONE`:

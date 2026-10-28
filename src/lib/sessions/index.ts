@@ -7,7 +7,8 @@ import {
 import { mapFolder, type ProjectRef } from './mapping';
 import { discoverRoots, home, shortPath } from './roots';
 import { LIVE, sessionState } from './state';
-import { eventsDir, readSessionStore, type SessionStore } from './store';
+import { readSettings } from '../settings';
+import { eventsDir, readSessionStore } from './store';
 import type { FolderGroup, HookEvent, LiveSession, LiveSnapshot, Root, SessionMeta, SourceId } from './types';
 
 const list = (v: unknown): string[] =>
@@ -38,18 +39,18 @@ export async function projectRefs(): Promise<ProjectRef[]> {
     .filter((n) => String(n.fm.type ?? '').toLowerCase() === 'project')
     .map((n) => {
       const name = cleanText(String(n.fm.title ?? '')) || n.name;
-      return { id: slugify(name), name, rel: n.rel, aliases: list(n.fm.aliases).map(cleanText), repos: list(n.fm.repos), repoUrls: list(n.fm.repo_urls) };
+      return { id: slugify(name), name, rel: n.rel, aliases: list(n.fm.aliases).map(cleanText), repos: list(n.fm.repos), repoUrls: list(n.fm.repo_urls), summaries: n.fm.summaries ? String(n.fm.summaries).toLowerCase().trim() : null };
     });
   caches.projects = { at: Date.now(), value };
   return value;
 }
 
-function enabledRoots(store: SessionStore): Root[] {
+export function enabledRoots(sources: Record<SourceId, boolean>): Root[] {
   const roots = discoverRoots();
-  return (Object.keys(roots) as SourceId[]).filter((s) => store.sources[s]).flatMap((s) => roots[s]);
+  return (Object.keys(roots) as SourceId[]).filter((s) => sources[s]).flatMap((s) => roots[s]);
 }
 
-async function sessionsSince(roots: Root[], since: number): Promise<SessionMeta[]> {
+export async function sessionsSince(roots: Root[], since: number): Promise<SessionMeta[]> {
   const all = (await Promise.all(roots.map((r) => (r.agent === 'claude' ? listClaudeSessions(r, since) : listCodexSessions(r, since))))).flat();
   // The same session can be visible through two sources; keep the most recently written copy.
   const byId = new Map<string, SessionMeta>();
@@ -61,8 +62,8 @@ async function sessionsSince(roots: Root[], since: number): Promise<SessionMeta[
 
 export async function scanFolders(days = 90): Promise<FolderGroup[]> {
   if (caches.folders && caches.folders.days === days && Date.now() - caches.folders.at < 30_000) return caches.folders.value;
-  const store = await readSessionStore();
-  const [metas, projects] = await Promise.all([sessionsSince(enabledRoots(store), Date.now() - days * 86_400_000), projectRefs()]);
+  const [store, { sources }] = await Promise.all([readSessionStore(), readSettings()]);
+  const [metas, projects] = await Promise.all([sessionsSince(enabledRoots(sources), Date.now() - days * 86_400_000), projectRefs()]);
   const groups = new Map<string, SessionMeta[]>();
   for (const m of metas) groups.set(m.cwd, [...(groups.get(m.cwd) ?? []), m]);
   const h = home();
@@ -89,8 +90,8 @@ export async function liveSnapshot(): Promise<LiveSnapshot> {
   if (caches.snapshot && Date.now() - caches.snapshot.at < 800) return caches.snapshot.value;
   const now = Date.now();
   const since = now - LIVE.endAfterMs;
-  const store = await readSessionStore();
-  const roots = enabledRoots(store);
+  const [store, { sources }] = await Promise.all([readSessionStore(), readSettings()]);
+  const roots = enabledRoots(sources);
   if (!roots.length) {
     const empty = { at: now, live: [], pending: 0 };
     caches.snapshot = { at: now, value: empty };

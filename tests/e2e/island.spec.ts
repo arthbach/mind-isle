@@ -33,7 +33,7 @@ test('the island fills the screen, zooms and pans, and a drag is not a click', a
 test('all navigation is in the hotbar: number keys open windows over the island, Esc closes them', async ({ page }) => {
   await page.goto(SESSIONS);
   const hotbar = page.getByRole('navigation', { name: 'Sections' });
-  await expect(hotbar.getByRole('link')).toHaveCount(8);
+  await expect(hotbar.getByRole('link')).toHaveCount(9);
   await expect(hotbar.getByRole('link', { name: /Island/ })).toHaveAttribute('aria-current', 'page');
 
   await page.keyboard.press('4');
@@ -66,4 +66,23 @@ test('music and sound effects have their own settings page, and the HUD button f
   await expect(page.getByRole('radio', { name: 'Lantern Night' })).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('m');
   await expect(page.getByRole('switch', { name: 'Music' })).toHaveAttribute('aria-checked', 'true');
+});
+
+test('the Treasury: Atlas’s first week, the villagers who need you, and what it builds next', async ({ page }) => {
+  await page.goto(SESSIONS);
+  await expect(page.getByRole('link', { name: /Shells in the treasury/ })).toBeVisible();
+  await page.keyboard.press('9');
+  await expect(page).toHaveURL(/\/isle$/);
+  await expect(page.getByRole('heading', { name: 'Atlas, Owner of the isle' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Who needs you' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Last nights' })).toBeVisible();
+  await expect(page.locator('.isle-nights li')).toHaveCount(7);
+  // Six buildings with levels, three Wonders.
+  await expect(page.locator('.isle-catalog li')).toHaveCount(9);
+  await expect(page.getByRole('heading', { name: 'Wonders' })).toBeVisible();
+  await page.getByRole('link', { name: 'The year so far →' }).click();
+  await expect(page).toHaveURL(/\/isle\/eras$/);
+  await expect(page.getByRole('heading', { name: /The island of 2026 \(so far\)/ })).toBeVisible();
+  await page.getByRole('link', { name: '←', exact: true }).click();
+  await expect(page).toHaveURL(/\/isle$/);
 });

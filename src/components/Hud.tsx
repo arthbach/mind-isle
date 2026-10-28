@@ -8,7 +8,8 @@ import { useEffect } from 'react';
 import { audioReady, blip, playMusic, setMusicVolume, stopMusic, suspendAudio } from '@/lib/audio';
 import { getPrefs, setPrefs, usePrefs } from '@/lib/prefs';
 import { LiveTracker } from './LiveSessions';
-import { Sprite } from './Sprite';
+import type { Look, Personality } from '@/lib/avatar';
+import { Avatar } from './Avatar';
 import { setTheme, useTheme } from './useTheme';
 
 export interface HudData {
@@ -22,6 +23,9 @@ export interface HudData {
   pending: number;
   demo: boolean;
   readOnly: boolean;
+  avatar: { personality: Personality; look: Look };
+  /** Civilization: treasury and how many villagers are alive. */
+  isle?: { balance: number; alive: number; ghosts: number; people: number };
 }
 
 export const SLOTS = [
@@ -33,6 +37,7 @@ export const SLOTS = [
   { href: '/trophies', icon: '🏆', label: 'Trophies' },
   { href: '/character', icon: '🧭', label: 'Character' },
   { href: '/settings', icon: '⚙', label: 'Settings' },
+  { href: '/isle', icon: '🐚', label: 'Treasury' },
 ] as const;
 
 const isActive = (path: string, href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`));
@@ -73,7 +78,7 @@ function PlayerPlate({ d }: { d: HudData }) {
   const pct = Math.round((d.xp.into / d.xp.need) * 100);
   return (
     <div className="hud-panel plate">
-      <Link href="/character" className="plate-face" aria-label="Character sheet"><Sprite name="traveler" /></Link>
+      <Link href="/character" className="plate-face" aria-label="Character sheet"><Avatar {...d.avatar} companion={false} /></Link>
       <div className="plate-main">
         <div className="plate-name"><b>{d.owner}</b> <span className="lv">Lv {d.level}</span> <span className="tiny muted">{d.className}</span></div>
         <div className="xpbar" role="meter" aria-label="Experience" aria-valuenow={d.xp.into} aria-valuemin={0} aria-valuemax={d.xp.need} title={`${d.xp.total} XP total`}>
@@ -94,7 +99,10 @@ function Counters({ d }: { d: HudData }) {
   const c = d.counts;
   const items = [
     { icon: '⚒', n: c.active, of: undefined, label: `${c.active} active sites, ${c.weedy} with weeds`, warn: c.weedy > 0 ? `${c.weedy}🌿` : null, href: null },
-    { icon: '🏮', n: c.warm, of: c.people, label: `${c.warm} of ${c.people} lanterns warm`, warn: null, href: null },
+    d.isle
+      ? { icon: '🏘', n: d.isle.alive, of: d.isle.people, label: `${d.isle.alive} of ${d.isle.people} villagers alive, ${d.isle.ghosts} ghosts`, warn: d.isle.ghosts ? `${d.isle.ghosts}👻` : null, href: null }
+      : { icon: '🏮', n: c.warm, of: c.people, label: `${c.warm} of ${c.people} lanterns warm`, warn: null, href: null },
+    ...(d.isle ? [{ icon: '🐚', n: d.isle.balance, of: undefined, label: `${d.isle.balance} Shells in the treasury`, warn: null, href: '/isle' }] : []),
     { icon: '🔖', n: c.due, of: undefined, label: `${c.due} decisions ready to judge`, warn: null, href: '/codex' },
     { icon: '🚩', n: c.unconfirmed, of: undefined, label: `${c.unconfirmed} banners to confirm`, warn: null, href: '/banners' },
     { icon: '🏆', n: c.trophies, of: undefined, label: `${c.trophies} trophies earned`, warn: null, href: '/trophies' },

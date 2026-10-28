@@ -1,6 +1,6 @@
 # Mind Isle v2: Roadmap & Spec
 
-Status: **Phases A and B shipped** (check-in gate, seasons, tests and write safety; agent sessions on the island). Phases C–E are planned. Progress is tracked in [PROGRESS.md](PROGRESS.md); the current app is described in the [README](../README.md).
+Status: **All phases (A–E) shipped** (check-in gate, seasons, tests and write safety; agent sessions on the island; settings note, session records, summaries with redaction, onboarding; the worldview wing; attributes v2 and the personality avatar). Progress is tracked in [PROGRESS.md](PROGRESS.md); the current app is described in the [README](../README.md).
 
 v2 turns Mind Isle from a vault viewer into a living chief of staff. It:
 
@@ -280,12 +280,12 @@ After writing, the project's `last_activity` is set to the session date. Summari
 
 ### Acceptance
 
-- [ ] Every session from an enabled source gets a metadata record, regardless of summary mode.
-- [ ] `off` never reads a transcript; `ask` never writes without a yes; pending scrolls survive restarts and never expire.
-- [ ] "Save all" at Dusk writes one note per pending session; "Always save" flips the project to `auto`.
-- [ ] A pending session whose transcript is older than `retention_warn_days` triggers a Dawn warning.
-- [ ] A transcript containing a fake API key and a `.env` block produces a note with both redacted (test fixture).
-- [ ] Malformed summariser output writes nothing and shows a retryable failure.
+- [x] Every session from an enabled source gets a metadata record, regardless of summary mode.
+- [x] `off` never reads a transcript; `ask` never writes without a yes; pending scrolls survive restarts and never expire.
+- [x] "Save all" at Dusk writes one note per pending session; "Always save" flips the project to `auto`.
+- [x] A pending session whose transcript is older than `retention_warn_days` triggers a Dawn warning.
+- [x] A transcript containing a fake API key and a `.env` block produces a note with both redacted (test fixture).
+- [x] Malformed summariser output writes nothing and shows a retryable failure.
 
 ---
 
@@ -322,9 +322,9 @@ The answer becomes a proposed banner, written in the user's own words.
 
 ### Acceptance
 
-- [ ] With scope "specific folders", no file outside those folders is read (test with a canary note).
-- [ ] A meeting note containing another person's political opinion produces no banner.
-- [ ] Sensitive banners never appear on `/hall` or in any summariser prompt (asserted in tests).
+- [x] With scope "specific folders", no file outside those folders is read (test with a canary note).
+- [x] A meeting note containing another person's political opinion produces no banner.
+- [x] Sensitive banners never appear on `/hall` or in any summariser prompt (asserted in tests).
 
 ---
 
@@ -449,6 +449,7 @@ Current attributes are lifetime counts with hand-picked weights. They only ever 
 | **C** | Settings note + page, `AGENTS.md` onboarding (§5), summaries pipeline with redaction (§3) | B |
 | **D** | Worldview wing (§4) | C (consent framework) |
 | **E** | Attributes v2 (§8), personality avatar (§7) | B (session hours), C |
+| **F** | Civilization (§12): Shells, the Owner, villagers' life and death, buildings, events, Eras | A–E |
 
 Each phase ships only when its acceptance checks pass.
 
@@ -457,3 +458,27 @@ Each phase ships only when its acceptance checks pass.
 - **Tropical months:** a built-in table by region, confirmed during onboarding. Any season can always be picked manually (§6).
 - **Unanswered summaries:** they never expire. Every session gets a metadata record; summaries wait as pending scrolls, batched at Dusk, with a warning before the transcript is deleted (§3.1).
 - **Session hours:** active time only; gaps over 10 minutes don't count (§8).
+
+## 12. Civilization (Phase F)
+
+A game layer on the island. Nothing in it replaces Mind Isle's own features; it is fed by them.
+
+**Shells 🐚.** Earned from dated vault events, recomputed on every load (nothing to fake, same on every device): a quest ticked (✅ date; 1, 2 or 3 by priority, at most 10 a day), a Dawn plan item done (2), Dawn locked and Dusk closed (2 each), a conversation (3; a rebirth 10), a project Log line (1), a session note (1), a decision judged (2). Only days since the isle was founded count.
+
+**Villagers.** Every person note. Contact history comes from meeting `attendees`, daily `## People` links, `last_contact` and `first_met`. Each person has a clock by `circle:` (close 10/21 days, client 14/30, network 45/90 until sick/dead; default client when their company is a project's client, else network). Past the dead mark they become a ghost with a grave; the next contact is a rebirth and adds a life. `in_memoriam: true` gives a golden spirit that never decays.
+
+**The Owner (Atlas).** Each night, for every night not yet processed, it pays weekly upkeep (closing buildings it can't pay for) and builds at most one thing, ranked: people in danger → what you do most → saving. The choice and its reason become the Dawn report. Only spending and buildings are stored, in `.palace/isle.json`.
+
+**Buildings.** Per village: Clinic (+7 days before death), Post Office (Dawn suggests a message to a sick person), Shrine (rebirth pays 15), Tavern (conversations there pay 4). Island-wide: Library (session notes pay 2), Market (high-priority quests pay 4).
+
+**Events (F3).** All decided by the Owner at night and stored, so they're the same on every device:
+- *Festival:* the next day in the calmest village (3+ alive, nobody sick, under 3 ghosts) that hasn't had one in 14 days (7 in a Golden Age); conversations there pay +3.
+- *Storm:* after 3 days in a row with nothing earned (at most one a week), the newest working building is broken from the next morning until the Owner pays a quarter of its price to mend it.
+- *Birthdays:* `birthday:` (`MM-DD` or a full date) on a person note; Dawn mentions them 3 days ahead, a conversation on the day pays +5.
+- *Weekly challenge:* posted on the latest night only, ending on Sunday: reach 2 of up to 5 sick or dead people in the village most in need (15 + 5 per person, and a festival there), or finish 12 quests when nobody is.
+
+**Levels.** Each building goes to level 2 and 3 when enough happens after it went up (rules in `LEVELS`), then the Owner pays 60% / 100% of its price. Clinic +7/+10/+14 days; Post Office 1/2/3 letter ideas; Shrine 15/18/20; Tavern, Library +1/+2/+3; Market high, then medium, then every quest +1.
+
+**Wonders and the Golden Age.** Unlocked within the Era by 60 nights with nobody dying (Great Lighthouse: +3 days for every sick villager), 20 people brought back (World Tree: rebirths +5), 60 Dawns locked (Grand Archive: Dawn and Dusk 3 each). They need the Plaza (60 🐚), then cost 150–180. A Golden Age starts the first night every village of 3+ has all four village buildings, the island has Library, Market and Plaza, and nobody is sick.
+
+**Eras (F4).** At the end of 31 December the Owner records the year (`EraRecord`), writes the chronicle note `Mind Isle/Eras/<year>.md` (never over an existing one) and starts a new island on 1 January: a quarter of the treasury, no buildings, blueprints at half price, statues of the year's Wonders. People carry over as they are, because they come from the vault. Each year's coast is drawn from noise shifted by the year.

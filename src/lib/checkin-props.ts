@@ -11,6 +11,8 @@ export function checkinProps(w: World) {
     readOnly: w.readOnly,
     initialMode: w.checkin.mode,
     quests: w.quests,
+    questTotal: w.questTotal,
+    vaultName: w.vaultName,
     ctx: {
       projects: w.projects.map((p) => ({ id: p.id, name: p.name, aliases: p.aliases })),
       people: w.people.map((p) => ({ name: p.name, aliases: p.aliases })),

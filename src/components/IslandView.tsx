@@ -3,17 +3,20 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { lightLantern, voteBelief } from '@/app/actions';
+import { lightLantern, setCircle, voteBelief } from '@/app/actions';
+import { PixelSelect } from './PixelSelect';
 import { RULES, TIER_LABEL, fmtDate, obsidianLink } from '@/lib/game';
 import { blip } from '@/lib/audio';
 import { setPrefs, usePrefs } from '@/lib/prefs';
 import type { Season } from '@/lib/seasons';
+import { BUILDINGS, CLOCK, WONDER_GOAL, type BuildingKey, type Circle, type Life, type WonderKey } from '@/lib/civ/rules';
 import type { Belief, BeliefStatus, Bet, Decision, Person, Project, Village } from '@/lib/types';
 import { AGENT_LABEL, type LiveSession } from '@/lib/sessions/types';
 import { ActionButton } from './ActionButton';
 import { CrewPins, type CrewGroup } from './CrewPins';
 import { useMapCamera } from './mapCamera';
 import { elapsed, STATE_LABEL, useLive } from './LiveSessions';
+import { ProjectUpdate } from './ProjectUpdate';
 import { Sprite } from './Sprite';
 
 export interface IslandData {
@@ -24,8 +27,30 @@ export interface IslandData {
   bets: Bet[];
   vaultName: string;
   readOnly: boolean;
+  /** YYYY-MM-DD in the user's timezone. */
+  today: string;
   counts: { active: number; weedy: number; warm: number; people: number; due: number; unconfirmed: number; trophies: number };
   season: { auto: Season; label: string };
+  /** Finished sessions waiting for a yes, by project id: a scroll on the building. */
+  scrolls?: Record<string, number>;
+  /** Civilization: each villager's life, each village's buildings, the treasury. */
+  isle?: IsleData;
+}
+
+export interface CivBuilt { key: BuildingKey; closed: boolean; damaged: boolean; level: number }
+export interface IsleData {
+  balance: number;
+  /** The year of this island: each year's land has its own shape. */
+  era: number;
+  life: Record<string, { life: Life; days: number | null; lives: number; left: number | null; circle: Circle; sick: number; dead: number; about: string | null; birthday: boolean }>;
+  villages: Record<string, { size: string; festival: boolean; buildings: CivBuilt[] }>;
+  isleBuildings: CivBuilt[];
+  plaza: boolean;
+  /** Wonders standing on this island. */
+  wonders: WonderKey[];
+  /** Wonders from earlier islands, as small statues. */
+  statues: { key: WonderKey; year: number }[];
+  golden: boolean;
 }
 
 // ---------------------------------------------------------------- noise
@@ -92,7 +117,7 @@ type Ent =
   | { kind: 'village'; key: string; r: Rect; v: Village; color: string }
   | { kind: 'belief'; key: string; r: Rect; b: Belief; x: number }
   | { kind: 'bet'; key: string; r: Rect; b: Bet; x: number; y: number }
-  | { kind: 'codex' | 'trophy' | 'home' | 'tower'; key: string; r: Rect }
+  | { kind: 'codex' | 'trophy' | 'home' | 'tower' | 'plaza'; key: string; r: Rect }
   | { kind: 'stray'; key: string; r: Rect; s: LiveSession; x: number; y: number };
 
 interface Crew { by: Map<string, LiveSession[]>; strays: LiveSession[] }
@@ -104,6 +129,11 @@ function rectDist(px: number, py: number, r: Rect) {
   const dy = Math.max(r[1] - py, 0, py - (r[1] + r[3]));
   return Math.hypot(dx, dy);
 }
+
+/** The Plaza: land south of Home where Wonders stand. */
+const PLAZA: Rect = [168, 163, 100, 29];
+/** Where each Wonder stands on the Plaza (left of the road, then right). */
+const WONDER_AT: Record<WonderKey, [number, number]> = { lighthouse: [172, 164], tree: [190, 166], archive: [228, 172] };
 
 // Boat slots per lane, in rows that extend south as the harbor fills.
 const SLOT: Record<'sea' | 'dock' | 'wreck', (k: number) => [number, number]> = {
@@ -124,9 +154,11 @@ function layout(d: IslandData) {
   // villages: 4 per row, each row as tall as its most crowded village
   const villages: { v: Village; x: number; y: number; h: number; color: string }[] = [];
   let vy = 96;
+  // Buildings take the top slots, two per row (houses fill the rest); extra rows push the people down.
+  const extraRows = (v: Village) => Math.max(0, Math.ceil((d.isle?.villages[v.name]?.buildings.length ?? 0) / 2) - 1);
   for (let r = 0; r * 4 < d.villages.length; r++) {
     const row = d.villages.slice(r * 4, r * 4 + 4);
-    const h = 21 + Math.max(...row.map((v) => Math.max(3, Math.ceil(v.people.length / 5)))) * 9;
+    const h = 21 + Math.max(...row.map((v) => Math.max(3, Math.ceil(v.people.length / 5)) * 9 + extraRows(v) * 11));
     row.forEach((v, j) => villages.push({ v, x: 264 + j * 32, y: vy, h, color: VCOLORS[(r * 4 + j) % VCOLORS.length] }));
     vy += h + 4;
   }
@@ -136,7 +168,7 @@ function layout(d: IslandData) {
   const villageEnts = villages.map(({ v, x, y, color }) => ({ kind: 'village' as const, key: `village:${v.name}`, v, color, r: [x + 2, y + 3, 26, 12] as Rect }));
   const people = villages.flatMap(({ v, x, y, color }) =>
     v.people.map((p, i) => {
-      const px = x + 3 + (i % 5) * 5, py = y + 18 + Math.floor(i / 5) * 9;
+      const px = x + 3 + (i % 5) * 5, py = y + 18 + extraRows(v) * 11 + Math.floor(i / 5) * 9;
       return { kind: 'person' as const, key: `person:${p.id}`, p, i, color, x: px, y: py, r: [px - 1, py - 2, 5, 8] as Rect };
     }),
   );
@@ -162,6 +194,7 @@ function layout(d: IslandData) {
     [196, 114, 48, 46], [62, 88, 104, wRows * 24 + 8], [260, 92, 134, villagesBottom - 86], [wallX, 26, wallW, 42], [256, 24, 72, 52], [182, 194, 76, 48],
     [252, 214 + dyH, 52, 32],
     ...(dyH ? [[200, 236, 104, dyH + 12] as Rect] : []),
+    ...(d.isle?.plaza ? [PLAZA] : []),
   ];
   const sea: Rect[] = [[280, 252 + dyH, 162, H], [372, 226 + dyH, 70, H]];
 
@@ -170,13 +203,16 @@ function layout(d: IslandData) {
     { kind: 'trophy', key: 'trophy', r: [184, 198, 72, 42] },
     { kind: 'home', key: 'home', r: [202, 120, 22, 22] },
     { kind: 'tower', key: 'tower', r: [226, 98, 12, 44] },
+    ...(d.isle?.plaza ? [{ kind: 'plaza' as const, key: 'plaza', r: PLAZA }] : []),
   ];
   const labels: { text: string; x: number; y: number; harbor?: boolean }[] = [
     { text: 'Workshop', x: 114, y: 88 }, { text: 'Villages', x: 327, y: 90 }, { text: 'Banner Wall', x: wallX + wallW / 2, y: 28 },
     { text: 'Codex', x: 292, y: 24 }, { text: 'Trophy Hall', x: 220, y: 196 }, { text: 'Home', x: 212, y: 116 },
     ...(bets.length ? [{ text: 'Harbor', x: 330, y: 246 + dyH, harbor: true }] : []),
+    ...(d.isle?.plaza ? [{ text: 'Plaza', x: 214, y: 162 }] : []),
   ];
   return {
+    era: d.isle?.era ?? 0, plaza: !!d.isle?.plaza,
     W, H, ox, dyH, wRows, wallX, wallW, pierLen, land, sea, labels,
     projects, villages, villageEnts, people, beliefs, bets,
     ents: [...fixed, ...villageEnts, ...projects, ...beliefs, ...people, ...bets] as Ent[],
@@ -194,9 +230,11 @@ function buildTerrain(c: HTMLCanvasElement, p: Pal, L: Layout): [number, number]
   const deco = p.deco.map(hex);
   const waves: [number, number][] = [];
   const cx = W / 2, cy = H / 2 - 2, rx = W / 2 - 14, ry = H / 2 - 14;
+  const seed = L.era > 2026 ? (L.era - 2026) * 17.3 : 0;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const nx = (x - cx) / rx, ny = (y - cy) / ry, mx = x - ox;
-    let h = 1 - Math.hypot(nx, ny) + (fbm(x * 0.022 + 3.1, y * 0.022 + 8.7) - 0.5) * 0.42;
+    // Each year's island is new land: the coast is drawn from noise shifted by the year.
+    let h = 1 - Math.hypot(nx, ny) + (fbm(x * 0.022 + 3.1 + seed, y * 0.022 + 8.7 + seed * 0.6) - 0.5) * 0.42;
     for (const r of L.land) h = Math.max(h, 0.42 - rectDist(mx, y, r) / 30);
     for (const r of L.sea) h = Math.min(h, -0.06 + rectDist(mx, y, r) / 22);
     let col: number[];
@@ -233,6 +271,7 @@ function buildTerrain(c: HTMLCanvasElement, p: Pal, L: Layout): [number, number]
   pad(198, 116, 44, 42, p.stone, p.stoneD);
   pad(260, 30, 64, 44, p.stone, p.stoneD);
   pad(184, 198, 72, 42, p.stone, p.stoneD);
+  if (L.plaza) pad(PLAZA[0] + 2, PLAZA[1] + 2, PLAZA[2] - 4, PLAZA[3] - 4, p.path, p.pathD);
   for (let i = 0; i < L.wRows * 6; i++) {
     const sx = 66 + (i % 6) * 16, sy = 90 + Math.floor(i / 6) * 24;
     fill(sx + 1, sy + 3, 15, 20, p.plotD); fill(sx + 2, sy + 4, 13, 18, p.plot);
@@ -350,17 +389,53 @@ function drawScene(ctx: CanvasRenderingContext2D, f: number, p: Pal, L: Layout, 
   }
 
   // villages
+  const smallHouse = (hx: number, hy: number, roof: string) => {
+    px(hx + 2, hy, 7, 2, roof); px(hx, hy + 2, 11, 2, roof); px(hx + 1, hy + 4, 9, 5, p.wall); px(hx + 4, hy + 6, 2, 3, p.door); px(hx + 7, hy + 5, 2, 2, p.win);
+  };
   for (const v of L.villages) {
-    for (const [hx, hy] of [[v.x + 3, v.y + 4], [v.x + 16, v.y + 4]]) {
-      px(hx + 2, hy, 7, 2, v.color); px(hx, hy + 2, 11, 2, v.color); px(hx + 1, hy + 4, 9, 5, p.wall); px(hx + 4, hy + 6, 2, 3, p.door); px(hx + 7, hy + 5, 2, 2, p.win);
+    const built = d.isle?.villages[v.v.name]?.buildings ?? [];
+    const slots = Math.max(2, Math.ceil(built.length / 2) * 2);
+    for (let k = 0; k < slots; k++) {
+      const hx = v.x + 3 + (k % 2) * 13, hy = v.y + 4 + Math.floor(k / 2) * 11;
+      if (built[k]) civBuilding(ctx, px, p, built[k], hx, hy, f);
+      else smallHouse(hx, hy, v.color);
+    }
+    // A festival: bunting over the village, flags fluttering.
+    if (d.isle?.villages[v.v.name]?.festival) {
+      const cols = ['#e0503a', '#f2c230', '#3f8fd8', '#4fae5c', '#c06ad8'];
+      px(v.x + 1, v.y + 1, 28, 1, p.wood);
+      for (let i = 0; i < 7; i++) {
+        const c = cols[(i + (f >> 1)) % cols.length], bx = v.x + 2 + i * 4, wave = (f + i) % 3 === 0 ? 1 : 0;
+        px(bx, v.y + 2, 3, 1, c); px(bx + 1, v.y + 3 + wave, 1, 1, c);
+      }
     }
   }
+  // Island-wide buildings stand south of Home.
+  (d.isle?.isleBuildings ?? []).forEach((b, k) => civBuilding(ctx, px, p, b, 198 + k * 13, 146, f));
+  if (d.isle?.plaza) drawPlaza(ctx, px, p, d.isle, f, o.night);
+
   for (const e of L.people) {
-    const t = e.p.tier;
-    const body = t === 'fading' ? p.fade : t === 'fog' ? p.fogNpc : e.color;
-    const y = t === 'warm' && (f + e.i) % 4 === 0 ? e.y - 1 : e.y;
-    px(e.x, y, 3, 2, p.skin); px(e.x, y + 2, 3, 3, body); px(e.x, y + 5, 1, 1, p.ink); px(e.x + 2, y + 5, 1, 1, p.ink);
-    if (t === 'warm') px(e.x + 1, y - 2, 1, 1, (f + e.i) % 3 ? p.lamp : p.gold);
+    const l = d.isle?.life[e.p.id];
+    if (!l) {
+      const t = e.p.tier;
+      const body = t === 'fading' ? p.fade : t === 'fog' ? p.fogNpc : e.color;
+      const y = t === 'warm' && (f + e.i) % 4 === 0 ? e.y - 1 : e.y;
+      px(e.x, y, 3, 2, p.skin); px(e.x, y + 2, 3, 3, body); px(e.x, y + 5, 1, 1, p.ink); px(e.x + 2, y + 5, 1, 1, p.ink);
+      if (t === 'warm') px(e.x + 1, y - 2, 1, 1, (f + e.i) % 3 ? p.lamp : p.gold);
+      continue;
+    }
+    drawVillager(ctx, px, p, e.x, e.y, l.life, e.color, f + e.i, o.night);
+    if (l.birthday && l.life !== 'ghost') {
+      const by = e.y - 7 + ((f + e.i) % 4 < 2 ? 0 : 1);
+      px(e.x + 3, by, 2, 2, '#e0503a'); px(e.x + 3, by, 1, 1, '#ff9a86'); px(e.x + 3, by + 2, 1, 3, p.ink);
+    }
+  }
+  // A Golden Age: the whole island glitters.
+  if (d.isle?.golden) {
+    for (let i = 0; i < 40; i++) {
+      if ((i + f) % 5 > 1) continue;
+      px(hash(i, 3) * L.W - L.ox, 30 + hash(i, 5) * (L.H - 60), 1, 1, (i + f) % 2 ? '#fff6c2' : p.gold);
+    }
   }
 
   // A light beam over every building with live sessions; the crew pins (HTML, above the map) carry the detail.
@@ -404,11 +479,118 @@ function drawScene(ctx: CanvasRenderingContext2D, f: number, p: Pal, L: Layout, 
       g.addColorStop(0, `rgba(255,200,90,${a})`); g.addColorStop(1, 'rgba(255,200,90,0)');
       ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
     };
-    for (const e of L.people) if (e.p.tier === 'warm') glow(e.x + 1.5, e.y - 1, 7, 0.35);
+    for (const e of L.people) if (d.isle ? d.isle.life[e.p.id]?.life === 'thriving' : e.p.tier === 'warm') glow(e.x + 1.5, e.y - 1, 7, 0.35);
     glow(232, 118, 10, 0.35); glow(220, 212, 22, 0.18);
     ctx.restore();
   }
   ctx.restore();
+}
+
+type Px = (x: number, y: number, w: number, h: number, c: string) => void;
+
+/** An 11×9 building in a village slot. Closed (unpaid upkeep): grey and boarded up. Storm-damaged: a hole and a rain cloud. Stars for levels. */
+function civBuilding(ctx: CanvasRenderingContext2D, px: Px, p: Pal, b: CivBuilt, x: number, y: number, f: number) {
+  const { key, closed } = b;
+  const wall = closed ? p.fade : p.wall;
+  const roof = closed ? p.stoneD : ({ clinic: '#f4f4f6', post: '#3f6fb8', shrine: '#c8402c', tavern: '#8d5a2b', library: '#5b3f8a', market: '#e0a020' } as Record<BuildingKey, string>)[key];
+  if (key === 'shrine') {
+    px(x, y + 1, 11, 2, roof); px(x + 1, y + 4, 9, 1, roof); px(x + 2, y + 3, 1, 6, roof); px(x + 8, y + 3, 1, 6, roof);
+    if (!closed) px(x + 4, y + 6, 3, 3, p.gold);
+  } else {
+    px(x + 2, y, 7, 2, roof); px(x, y + 2, 11, 2, roof); px(x + 1, y + 4, 9, 5, wall); px(x + 4, y + 6, 2, 3, p.door);
+    if (key === 'clinic') { px(x + 5, y - 2, 1, 4, '#d33'); px(x + 4, y - 1, 3, 1, '#d33'); }
+    if (key === 'post') { px(x + 8, y + 5, 2, 4, '#d33'); }
+    if (key === 'tavern') { px(x + 8, y + 5, 2, 2, p.gold); }
+    if (key === 'library') { px(x + 2, y + 5, 1, 3, p.gold); px(x + 8, y + 5, 1, 3, p.gold); }
+    if (key === 'market') { for (let i = 0; i < 11; i += 2) px(x + i, y + 4, 1, 1, '#fff'); }
+  }
+  if (closed) { px(x + 1, y + 4, 9, 1, p.wood); px(x + 1, y + 7, 9, 1, p.wood); }
+  // Level stars over the roof's right end.
+  for (let l = 1; l < b.level; l++) { const sx = x + 9 - (l - 1) * 3; px(sx, y - 2, 1, 3, p.gold); px(sx - 1, y - 1, 3, 1, p.gold); }
+  if (b.damaged) {
+    px(x + 3, y + 1, 3, 2, p.ink); px(x + 7, y + 5, 1, 3, p.ink);
+    ctx.globalAlpha = 0.85;
+    px(x + 1, y - 6, 9, 3, '#6b7280'); px(x + 3, y - 7, 5, 1, '#6b7280');
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 3; i++) px(x + 2 + i * 3, y - 3 + ((f + i) % 3), 1, 1, '#9cc3f0');
+  }
+}
+
+/** The Plaza: Wonders standing, statues of Wonders from earlier islands. */
+function drawPlaza(ctx: CanvasRenderingContext2D, px: Px, p: Pal, isle: IsleData, f: number, night: boolean) {
+  for (const w of isle.wonders) {
+    const [x, y] = WONDER_AT[w];
+    if (w === 'lighthouse') {
+      px(x + 1, y + 18, 8, 3, p.stoneD);
+      for (let i = 0; i < 6; i++) px(x + 2, y + 6 + i * 2, 6, 2, i % 2 ? '#f4f4f6' : '#c8402c');
+      px(x + 1, y + 4, 8, 2, p.stoneD); px(x + 3, y, 4, 4, f % 4 < 2 ? '#ffe28a' : p.lamp); px(x + 2, y - 1, 6, 1, p.stoneD);
+      if (night || f % 8 < 4) {
+        ctx.save(); ctx.globalAlpha = night ? 0.35 : 0.18; ctx.fillStyle = '#ffe28a';
+        const dir = f % 16 < 8 ? 1 : -1;
+        ctx.beginPath(); ctx.moveTo(x + 5, y + 2); ctx.lineTo(x + 5 + dir * 40, y - 6); ctx.lineTo(x + 5 + dir * 40, y + 8); ctx.fill();
+        ctx.restore();
+      }
+    } else if (w === 'tree') {
+      // A round canopy in rows, light on top, over a thick trunk with roots.
+      px(x + 7, y + 11, 4, 9, '#6b4423'); px(x + 5, y + 19, 8, 2, '#6b4423'); px(x + 8, y + 12, 1, 6, '#8a5a2e');
+      for (const [dy, x0, w] of [[0, 5, 8], [1, 3, 12], [2, 2, 14], [3, 1, 16], [4, 1, 16], [5, 1, 16], [6, 1, 16], [7, 2, 14], [8, 2, 14], [9, 3, 12], [10, 5, 8]] as const) {
+        px(x + x0, y + dy, w, 1, '#2f7d46');
+      }
+      for (const [dy, x0, w] of [[1, 6, 6], [2, 4, 8], [3, 3, 8], [4, 3, 6], [5, 4, 3]] as const) px(x + x0, y + dy, w, 1, '#4fae5c');
+      for (const [dx, dy] of [[5, 2], [9, 3], [12, 6], [4, 7], [10, 8]]) px(x + dx, y + dy, 1, 1, '#9be3a8');
+      if (f % 6 < 3) px(x + 3 + ((f * 5) % 12), y + 2 + (f % 7), 1, 1, '#fff6c2');
+    } else {
+      px(x, y + 4, 22, 2, p.marble); px(x + 2, y + 2, 18, 2, p.marble); px(x + 6, y, 10, 2, p.marble);
+      for (let i = 0; i < 5; i++) px(x + 2 + i * 4, y + 6, 2, 9, p.marble);
+      px(x, y + 15, 22, 2, p.stoneD); px(x + 10, y + 9, 2, 6, p.door);
+    }
+  }
+  isle.statues.slice(-6).forEach((st, k) => {
+    const x = 246 + (k % 3) * 6, y = 176 + Math.floor(k / 3) * 8;
+    px(x, y + 4, 4, 2, p.stoneD); px(x + 1, y, 2, 4, st.key === 'tree' ? '#7a9a7a' : st.key === 'lighthouse' ? '#a8a29e' : p.marble);
+  });
+}
+
+/** A villager by life: walking, waiting, in bed, a grave with its ghost, or a golden spirit. */
+function drawVillager(ctx: CanvasRenderingContext2D, px: Px, p: Pal, x: number, y: number, life: Life, color: string, t: number, night: boolean) {
+  const body = (bx: number, by: number, shirt: string) => {
+    px(bx, by, 3, 2, p.skin); px(bx, by + 2, 3, 3, shirt); px(bx, by + 5, 1, 1, p.ink); px(bx + 2, by + 5, 1, 1, p.ink);
+  };
+  switch (life) {
+    case 'thriving': {
+      const by = t % 4 === 0 ? y - 1 : y;
+      body(x, by, color);
+      px(x + 1, by - 2, 1, 1, t % 3 ? p.lamp : p.gold);
+      return;
+    }
+    case 'idle':
+      body(x, y, color);
+      if (t % 6 < 3) { px(x + 3, y - 2, 1, 1, p.ink); if (t % 6 > 0) px(x + 5, y - 2, 1, 1, p.ink); }
+      return;
+    case 'sick':
+      // In bed: a white sheet, a pale face, and a slow z.
+      px(x - 1, y + 3, 6, 3, '#f4efe4'); px(x - 1, y + 2, 2, 2, '#c9d6a0'); px(x + 1, y + 3, 4, 1, color);
+      if (t % 4 < 2) px(x + 3, y - 1 - (t % 2), 1, 1, p.ink);
+      return;
+    case 'ghost': {
+      // The grave stays put; the ghost drifts a little above it.
+      px(x, y + 2, 3, 4, '#9a9aa2'); px(x + 1, y + 1, 1, 1, '#9a9aa2'); px(x + 1, y + 3, 1, 2, '#6a6a72');
+      const gx = x + ((t >> 1) % 4 < 2 ? 0 : 1), gy = y - 5 + (t % 4 < 2 ? 0 : 1);
+      ctx.globalAlpha = night ? 0.95 : 0.7;
+      px(gx, gy, 3, 4, night ? '#dfe9ff' : '#eef4ff'); px(gx, gy + 4, 1, 1, '#eef4ff'); px(gx + 2, gy + 4, 1, 1, '#eef4ff');
+      px(gx, gy + 1, 1, 1, '#1d1a3a'); px(gx + 2, gy + 1, 1, 1, '#1d1a3a');
+      ctx.globalAlpha = 1;
+      return;
+    }
+    case 'spirit':
+      ctx.globalAlpha = 0.85;
+      px(x, y - 1, 3, 5, '#ffe28a'); px(x, y - 3, 3, 1, p.gold);
+      ctx.globalAlpha = 1;
+      return;
+    case 'unknown':
+      body(x, y, p.fogNpc);
+      return;
+  }
 }
 
 function drawWeather(ctx: CanvasRenderingContext2D, season: Season, t: number, night: boolean, W: number, H: number) {
@@ -601,6 +783,12 @@ export function IslandView({ data }: { data: IslandData }) {
           {L.labels.filter((l) => !l.harbor || harbor).map((l) => (
             <div key={l.text} className="dlabel" style={{ left: `${((l.x + L.ox) / L.W) * 100}%`, top: `${(l.y / L.H) * 100}%` }}>{l.text}</div>
           ))}
+          {L.projects.filter((e) => data.scrolls?.[e.p.id]).map((e) => (
+            <Link key={`scroll:${e.key}`} href="/today" className="scroll-pin" title={`${data.scrolls![e.p.id]} ${e.p.name} session${data.scrolls![e.p.id] === 1 ? '' : 's'} waiting to be saved`}
+              style={{ left: `${((e.sx + 16 + L.ox) / L.W) * 100}%`, top: `${((e.sy + 21) / L.H) * 100}%` }}>
+              📜{data.scrolls![e.p.id] > 1 && <b>{data.scrolls![e.p.id]}</b>}
+            </Link>
+          ))}
           <CrewPins groups={groups} frame={worldRef} canvas={canvasSize} onSelect={select} />
         </div>
         {hov && <div className="tip" style={{ left: hov.x, top: hov.y }}><Tip e={hov.e} data={data} crew={crew} /></div>}
@@ -636,6 +824,15 @@ function hudInsets() {
   return narrow ? { top: 96, right: 8, bottom: 84, left: 8 } : { top: 88, right: 24, bottom: 96, left: 24 };
 }
 
+const LIFE_WORD: Record<Life, string> = { thriving: 'Thriving', idle: 'Idle', sick: 'Sick', ghost: 'Ghost', spirit: 'In memoriam', unknown: 'Never logged' };
+type LifeInfo = NonNullable<IsleData['life'][string]>;
+function lifeLine(l: LifeInfo) {
+  if (l.life === 'spirit') return 'In memoriam · a golden spirit';
+  if (l.life === 'unknown') return 'Never logged · no contact yet';
+  const ago = `last talked ${l.days} day${l.days === 1 ? '' : 's'} ago`;
+  return `${LIFE_WORD[l.life]}${l.lives > 1 ? ` · life ${l.lives}` : ''} · ${ago}`;
+}
+
 function Tip({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
   switch (e.kind) {
     case 'project': {
@@ -643,14 +840,21 @@ function Tip({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
       return <><b>{e.p.name}</b><br />{STATUS_WORD[e.p.status]}{e.p.days !== null && ` · ${e.p.days}d since movement`}{n > 0 && <><br />{n} live session{n > 1 ? 's' : ''}</>}</>;
     }
     case 'stray': return <><b>{e.s.cwdShort}</b><br />{AGENT_LABEL[e.s.agent]} session · not placed in a project yet</>;
-    case 'person': return <><b>{e.p.name}</b><br />{e.p.company}{e.p.role && ` · ${e.p.role}`}<br />{TIER_LABEL[e.p.tier]}</>;
-    case 'village': return <><b>{e.v.name}</b><br />{e.v.people.length} people</>;
+    case 'person': {
+      const l = data.isle?.life[e.p.id];
+      return <><b>{e.p.name}</b><br />{e.p.company}{e.p.role && ` · ${e.p.role}`}<br />{l ? lifeLine(l) : TIER_LABEL[e.p.tier]}</>;
+    }
+    case 'village': {
+      const iv = data.isle?.villages[e.v.name];
+      return <><b>{e.v.name}</b><br />{iv ? `${iv.size} · ` : ''}{e.v.people.length} people{iv?.buildings.length ? ` · ${iv.buildings.map((b) => BUILDINGS[b.key].icon).join('')}` : ''}{iv?.festival ? <><br />🎉 Festival today</> : null}</>;
+    }
     case 'belief': return <><b>Banner</b><br />{e.b.text}</>;
     case 'bet': return <><b>{e.b.title}</b><br />{BET_WORD[e.b.status]}</>;
     case 'codex': return <><b>The Codex</b><br />{data.decisions.length} decisions, {data.counts.due} ready to judge</>;
     case 'trophy': return <><b>Trophy Hall</b><br />{data.counts.trophies} trophies earned</>;
     case 'home': return <><b>Home</b><br />Your character sheet</>;
     case 'tower': return <><b>Atlas’s observatory</b><br />Your Dawn plan and Dusk review</>;
+    case 'plaza': return <><b>The Plaza</b><br />{data.isle?.wonders.length ? data.isle.wonders.map((w) => `${BUILDINGS[w].icon} ${BUILDINGS[w].name}`).join(' · ') : 'Waiting for its first Wonder'}</>;
   }
 }
 
@@ -765,6 +969,12 @@ function Detail({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
             {pr.deadline && <><dt>Deadline</dt><dd>{fmtDate(pr.deadline)}</dd></>}
           </dl>
           <div className="why"><b>Why it looks like this:</b> {why}</div>
+          {pr.log.length > 0 && (
+            <ul className="pu-log" aria-label="Latest updates">
+              {pr.log.slice(0, 3).map((u, i) => <li key={i}><time dateTime={u.date}>{fmtDate(u.date)}</time>{u.text}</li>)}
+            </ul>
+          )}
+          {!data.readOnly && <ProjectUpdate key={pr.path} path={pr.path} status={pr.status} today={data.today} />}
           {(crew.by.get(pr.id)?.length ?? 0) > 0 && <SessionList sessions={crew.by.get(pr.id)!} />}
           {open(pr.path)}
         </>
@@ -772,6 +982,8 @@ function Detail({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
     }
     case 'person': {
       const p = e.p;
+      const l = data.isle?.life[p.id];
+      if (l) return <VillagerDetail p={p} l={l} data={data} open={open(p.path)} />;
       const tip = { warm: 'The lantern is lit. Nothing to do.', cooling: 'Worth a two-line check-in this week.', fading: 'Maybe a coffee or a voice note?', fog: 'Rekindle this, or let it rest. Both are fine; just choose.' }[p.tier];
       return (
         <>
@@ -789,15 +1001,43 @@ function Detail({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
         </>
       );
     }
-    case 'village':
+    case 'plaza': {
+      const isle = data.isle!;
       return (
         <>
-          <h2>{e.v.name}</h2>
+          <div><span className="pill">{isle.golden ? 'Golden Age ✨' : `The island of ${isle.era}`}</span><h2 style={{ marginTop: 6 }}>The Plaza</h2></div>
+          <p className="small" style={{ margin: 0 }}>Land Atlas cleared for Wonders. Each one is unlocked by what you do, then paid for in Shells.</p>
           <ul className="list">
-            {e.v.people.map((p) => <li key={p.id} className="item"><h4>{p.name}</h4><p>{p.role || '—'} · {TIER_LABEL[p.tier]}</p></li>)}
+            {(Object.keys(WONDER_GOAL) as WonderKey[]).map((w) => (
+              <li key={w} className="item"><h4>{BUILDINGS[w].icon} {BUILDINGS[w].name}{isle.wonders.includes(w) ? ' · standing' : ''}</h4><p>{BUILDINGS[w].does}. Unlocked by {WONDER_GOAL[w].need} {WONDER_GOAL[w].what}.</p></li>
+            ))}
+          </ul>
+          {isle.statues.length > 0 && <p className="tiny muted" style={{ margin: 0 }}>Statues from earlier islands: {isle.statues.map((st) => `${BUILDINGS[st.key].icon} ${st.year}`).join(' · ')}</p>}
+          <Link className="btn" href="/isle">Open the Treasury →</Link>
+        </>
+      );
+    }
+    case 'village': {
+      const iv = data.isle?.villages[e.v.name];
+      return (
+        <>
+          <div>{iv && <span className="pill">{iv.size}</span>}{iv?.festival && <> <span className="pill">🎉 Festival today</span></>}<h2 style={{ marginTop: 6 }}>{e.v.name}</h2></div>
+          {iv && (
+            <p className="small" style={{ margin: 0 }}>
+              {iv.buildings.length
+                ? iv.buildings.map((b) => `${BUILDINGS[b.key].icon} ${BUILDINGS[b.key].name}${b.level > 1 ? ` ★${b.level}` : ''}${b.closed ? ' (closed: upkeep unpaid)' : b.damaged ? ' (storm-damaged)' : ''}`).join(' · ')
+                : 'No buildings yet. Atlas builds here when the village needs it.'}
+            </p>
+          )}
+          <ul className="list">
+            {e.v.people.map((p) => {
+              const l = data.isle?.life[p.id];
+              return <li key={p.id} className="item"><h4>{l?.life === 'ghost' ? '👻 ' : l?.life === 'sick' ? '🤒 ' : ''}{p.name}</h4><p>{p.role || '—'} · {l ? lifeLine(l) : TIER_LABEL[p.tier]}</p></li>;
+            })}
           </ul>
         </>
       );
+    }
     case 'belief':
       return <><h2>Banner</h2><BeliefCard b={e.b} vaultName={data.vaultName} readOnly={data.readOnly} /></>;
     case 'bet':
@@ -819,6 +1059,44 @@ function Detail({ e, data, crew }: { e: Ent; data: IslandData; crew: Crew }) {
       return <><h2>{m[0]}</h2><p className="small" style={{ margin: 0 }}>{m[1]}</p><Link className="btn primary" href={m[2]}>Enter →</Link></>;
     }
   }
+}
+
+const CIRCLE_OPTIONS = (Object.keys(CLOCK) as Circle[]).map((c) => ({ value: c, label: CLOCK[c].label, hint: `sick at ${CLOCK[c].sick} days, ghost at ${CLOCK[c].dead}` }));
+
+function VillagerDetail({ p, l, data, open }: { p: Person; l: LifeInfo; data: IslandData; open: React.ReactNode }) {
+  const tip = {
+    thriving: 'All good. They wave when you walk by.',
+    idle: 'Sitting outside, a bit bored. A quick message keeps them going.',
+    sick: `In bed. ${l.left} day${l.left === 1 ? '' : 's'} before they die. Two lines today would do it.`,
+    ghost: 'Their ghost drifts over the grave. Talk to them and they come back, with a new life.',
+    spirit: 'A golden spirit. Remembered, never neglected.',
+    unknown: 'No contact logged yet: no meeting, no Dusk mention, no last_contact.',
+  }[l.life];
+  const health = l.days === null ? 0 : Math.max(4, 100 - (l.days / l.dead) * 100);
+  return (
+    <>
+      <div>
+        <span className={`pill life-${l.life}`}>{LIFE_WORD[l.life]}</span>{' '}
+        {l.lives > 1 && <span className="pill">Life {l.lives}</span>}{' '}
+        <span className="pill">{p.company}</span>
+        <h2 style={{ marginTop: 6 }}>{p.name}</h2>{p.role && <div className="small muted">{p.role}</div>}
+      </div>
+      <dl className="kv">
+        <dt>Last talked</dt><dd>{l.days === null ? 'never logged' : `${l.days} day${l.days === 1 ? '' : 's'} ago`}</dd>
+        {l.about && <><dt>About</dt><dd>{l.about}</dd></>}
+        {l.life !== 'spirit' && <><dt>Clock</dt><dd>sick at {l.sick} days · ghost after {l.dead}{l.dead > CLOCK[l.circle].dead ? ' (Clinic +7)' : ''}</dd></>}
+      </dl>
+      {l.life !== 'spirit' && l.life !== 'unknown' && <div className="life-bar" aria-hidden="true"><span className={`life-${l.life}`} style={{ width: `${l.life === 'ghost' ? 0 : health}%` }} /></div>}
+      <div className="why"><b>Atlas:</b> {tip}</div>
+      {!data.readOnly && l.life !== 'spirit' && (
+        <div className="row">
+          <ActionButton className="btn good" action={() => lightLantern(p.path)}>{l.life === 'ghost' ? '✨ We talked: bring them back' : '💬 We talked today'}</ActionButton>
+          <PixelSelect<Circle> label="Circle" value={l.circle} options={CIRCLE_OPTIONS} onChange={(c) => { void setCircle(p.path, c); }} />
+        </div>
+      )}
+      <div className="row">{open}<span className="tiny muted">Passed away? Add <code>in_memoriam: true</code> to their note.</span></div>
+    </>
+  );
 }
 
 export function BeliefCard({ b, vaultName, readOnly }: { b: Belief; vaultName: string; readOnly: boolean }) {

@@ -112,6 +112,18 @@ export function setFrontmatterList(raw: string, key: string, values: string[]): 
   });
 }
 
+/** Set a field to a one-line map, `key: { a: 1, b: true, c: [x, y] }`. */
+export function setFrontmatterMap(raw: string, key: string, map: Record<string, Scalar | string[]>): string {
+  return editFrontmatter(raw, [key], (lines) => {
+    const value = (v: Scalar | string[]) => (Array.isArray(v) ? `[${v.map((x) => JSON.stringify(x)).join(', ')}]` : yamlScalar(v) || 'null');
+    const body = Object.entries(map).map(([k, v]) => `${k}: ${value(v)}`).join(', ');
+    const r = keyRange(lines, key);
+    const line = `${key}: { ${body} }`;
+    if (r) lines.splice(r[0], r[1] - r[0], line);
+    else lines.push(line);
+  });
+}
+
 /** Read a list field from raw note text. */
 export function readFrontmatterList(raw: string, key: string): string[] {
   const m = raw.match(FRONTMATTER_RE);

@@ -5,8 +5,8 @@ import { today } from './clock';
 import { cleanText, matchPerson, matchProject, slugify, VERDICTS } from './game';
 import type { Phase } from './gate';
 import { updateStore } from './store';
-import type { BeliefStatus, PlanStatus } from './types';
-import { section, setTaskStatus, splitFrontmatter, taskLines } from './vault/markdown';
+import type { BeliefStatus, PlanStatus, ProjectStatus } from './types';
+import { addLogLine, section, setTaskStatus, splitFrontmatter, taskLines } from './vault/markdown';
 import { loadNotes } from './vault/reader';
 import {
   assertWritable, readFrontmatterList, resolveInVault, setFrontmatter, setFrontmatterList, updateNote, upsertSections,
@@ -156,6 +156,15 @@ export async function reopenDusk() {
 // ---------- Boards ----------
 
 export async function completeQuest(id: string, expected: string) {
+  await closeQuest(id, expected, 'x', '✅');
+}
+
+/** Not doing it after all: `[-] … ❌ date`, the Tasks plugin's "cancelled". */
+export async function dropQuest(id: string, expected: string) {
+  await closeQuest(id, expected, '-', '❌');
+}
+
+async function closeQuest(id: string, expected: string, mark: string, stamp: string) {
   assertWritable();
   const hash = id.lastIndexOf('#');
   const rel = id.slice(0, hash);
@@ -168,9 +177,9 @@ export async function completeQuest(id: string, expected: string) {
     if (!t || t.status !== ' ' || cleanText(t.text) !== cleanText(expected)) {
       throw new Error('That task changed in the vault. Refresh and try again.');
     }
-    lines[line] = `${setTaskStatus(lines[line].trimEnd(), 'x')} ✅ ${today()}`;
+    lines[line] = `${setTaskStatus(lines[line].trimEnd(), mark)} ${stamp} ${today()}`;
     const next = lines.join('\n');
-    return typeOf(splitFrontmatter(next).fm) === 'project' ? setFrontmatter(next, { last_activity: today() }) : next;
+    return mark === 'x' && typeOf(splitFrontmatter(next).fm) === 'project' ? setFrontmatter(next, { last_activity: today() }) : next;
   });
 }
 
@@ -178,6 +187,40 @@ export async function touchPerson(rel: string) {
   assertWritable();
   await noteOfType(rel, 'person');
   await updateNote(rel, (raw) => setFrontmatter(raw, { last_contact: today() }));
+}
+
+const PROJECT_STATUSES: ProjectStatus[] = ['active', 'blocked', 'paused', 'maintenance', 'done', 'stopped'];
+
+/**
+ * Something that happened on a project, possibly days ago: a dated line in its `## Log`,
+ * `last_activity` moved forward to that date (never back), and the status if it changed.
+ */
+export async function logProjectUpdate(input: { rel: string; text: string; date: string; status?: ProjectStatus | null }) {
+  assertWritable();
+  const text = cleanOne(input.text);
+  if (!text) throw new Error('Write what happened.');
+  const date = String(input.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) throw new Error('Pick a valid date.');
+  if (date > today()) throw new Error('That date is in the future. Add it to your plan instead.');
+  const status = input.status ?? null;
+  if (status !== null && !PROJECT_STATUSES.includes(status)) throw new Error('Unknown status.');
+  await noteOfType(input.rel, 'project');
+  await updateNote(input.rel, (raw) => {
+    const { fm, body } = splitFrontmatter(raw);
+    const last = String(fm.last_activity ?? '').slice(0, 10);
+    const patch: Record<string, string> = {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(last) || date > last) patch.last_activity = date;
+    if (status) patch.status = status;
+    return upsertSections(setFrontmatter(raw, patch), { Log: addLogLine(section(body, 'log', true), date, text) });
+  });
+}
+
+/** A villager's clock: close, client or network. */
+export async function setCircle(rel: string, circle: string) {
+  assertWritable();
+  if (!['close', 'client', 'network'].includes(circle)) throw new Error('Unknown circle.');
+  await noteOfType(rel, 'person');
+  await updateNote(rel, (raw) => setFrontmatter(raw, { circle }));
 }
 
 export async function setBeliefStatus(rel: string, status: BeliefStatus) {

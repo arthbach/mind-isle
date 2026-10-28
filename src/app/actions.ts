@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation';
 import * as checkin from '@/lib/checkin';
 import type { Phase } from '@/lib/gate';
 import { SESSION_COOKIE, safeEqual, sessionToken } from '@/lib/session';
-import type { BeliefStatus } from '@/lib/types';
+import type { BeliefStatus, ProjectStatus } from '@/lib/types';
 
 const refresh = () => revalidatePath('/', 'layout');
 
@@ -35,8 +35,20 @@ export async function completeQuest(id: string, expected: string) {
   await checkin.completeQuest(id, expected);
   refresh();
 }
+export async function dropQuest(id: string, expected: string) {
+  await checkin.dropQuest(id, expected);
+  refresh();
+}
 export async function lightLantern(personRel: string) {
   await checkin.touchPerson(personRel);
+  refresh();
+}
+export async function logProjectUpdate(input: { rel: string; text: string; date: string; status?: ProjectStatus | null }) {
+  await checkin.logProjectUpdate(input);
+  refresh();
+}
+export async function setCircle(personRel: string, circle: string) {
+  await checkin.setCircle(personRel, circle);
   refresh();
 }
 export async function voteBelief(rel: string, status: BeliefStatus) {

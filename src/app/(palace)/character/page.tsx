@@ -1,20 +1,24 @@
-import { Sprite } from '@/components/Sprite';
+import { AvatarEditor } from '@/components/AvatarEditor';
+import { readSettings } from '@/lib/settings';
 import { getWorld } from '@/lib/world';
 
 export default async function CharacterPage() {
-  const w = await getWorld();
+  const [w, settings] = await Promise.all([getWorld(), readSettings()]);
   const dailies = w.calendar.filter((d) => d.kind === 'daily').length;
   return (
     <div className="char">
       <div className="panel card" style={{ textAlign: 'center' }}>
-        <Sprite name="traveler" className="bigport" />
         <h2>{w.owner}</h2>
         <p className="small muted" style={{ margin: '2px 0 8px' }}>{w.className}</p>
         <span className="chip">Level {w.xp.level} · {w.xp.total} XP</span>
-        <p className="tiny muted" style={{ marginTop: 10 }}>Your class is your strongest attribute. Every point comes from your vault.</p>
+        <AvatarEditor personality={settings.personality} look={settings.look} readOnly={w.readOnly} />
       </div>
       <div className="panel card">
         <h2>Attributes</h2>
+        <p className="sub">
+          The last 30 days, from your vault and agent sessions. 50 is your usual pace (your average over 90 days), 100 is twice that;
+          Follow-through and Chronicler are plain percentages. Your class is this month’s strongest attribute.
+        </p>
         <div style={{ marginTop: 8 }}>
           {w.attributes.map((a) => (
             <div key={a.key}>
@@ -24,6 +28,15 @@ export default async function CharacterPage() {
                 <span className="px">{a.value}</span>
               </div>
               <div className="tiny muted bar-detail">{a.detail}</div>
+              {a.why && (
+                <details className="why">
+                  <summary className="tiny">why?</summary>
+                  <table className="tiny">
+                    <thead><tr><th /><th>last 30 days</th><th>usual 30 days</th></tr></thead>
+                    <tbody>{a.why.map((x) => <tr key={x.label}><td>{x.label}</td><td>{x.recent}</td><td>{x.usual}</td></tr>)}</tbody>
+                  </table>
+                </details>
+              )}
             </div>
           ))}
         </div>

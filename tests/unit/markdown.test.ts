@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bullets, firstParagraph, section, setTaskStatus, splitFrontmatter, taskLines } from '@/lib/vault/markdown';
+import { addLogLine, bullets, firstParagraph, projectLog, section, setTaskStatus, splitFrontmatter, taskLines } from '@/lib/vault/markdown';
 
 describe('splitFrontmatter', () => {
   it('keeps dates as strings and returns the body', () => {
@@ -51,5 +51,28 @@ describe('tasks', () => {
   });
   it('changes only the status character', () => {
     expect(setTaskStatus('  - [ ] do it 📅 2026-01-01', 'x')).toBe('  - [x] do it 📅 2026-01-01');
+  });
+});
+
+describe('project log', () => {
+  it('matches the Log heading exactly, not Logistics', () => {
+    const body = '## Logistics\n- trucks\n## Log\n- 2026-10-01 Kickoff';
+    expect(section(body, 'log', true).trim()).toBe('- 2026-10-01 Kickoff');
+    expect(section(body, 'log').trim()).toBe('- trucks');
+  });
+
+  it('reads dated lines in common shapes, newest first', () => {
+    expect(projectLog('- 2026-09-01 A\n- **2026-10-02**: B\n- 2026-10-01 — C\nloose text\n- no date')).toEqual([
+      { date: '2026-10-02', text: 'B' }, { date: '2026-10-01', text: 'C' }, { date: '2026-09-01', text: 'A' },
+    ]);
+  });
+
+  it('inserts by date and ignores exact repeats', () => {
+    let t = addLogLine('', '2026-10-01', 'A');
+    t = addLogLine(t, '2026-10-05', 'B');
+    t = addLogLine(t, '2026-09-01', 'C');
+    t = addLogLine(t, '2026-10-01', 'A');
+    expect(t).toBe('- 2026-10-05 B\n- 2026-10-01 A\n- 2026-09-01 C');
+    expect(addLogLine('Some intro\n- 2026-10-01 A', '2026-10-03', 'B')).toBe('Some intro\n- 2026-10-03 B\n- 2026-10-01 A');
   });
 });

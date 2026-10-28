@@ -3,10 +3,14 @@
 // The Dawn/Dusk check-in: Atlas on one line at the top, then two columns.
 // Dawn: quest board → today's plan. Dusk: what got done → everything else about the day.
 import { useEffect, useState, useTransition } from 'react';
-import { closeDay, lockPlan, reopenDay, skipCheckin, unlockPlan } from '@/app/actions';
+import { closeDay, completeQuest, dropQuest, lockPlan, reopenDay, skipCheckin, unlockPlan } from '@/app/actions';
 import { fmtDate, tagFor, type Tag } from '@/lib/game';
 import type { DayEntry, PlanStatus, Quest, TagContext } from '@/lib/types';
+import { QuestBoard } from './Boards';
 import { Sprite } from './Sprite';
+import { OwnerReport, type OwnerReportData } from './IsleUI';
+import { RetentionNotice, ScrollBatch, type Scroll } from './SummariesUI';
+import { InterviewQuestion } from './WorldviewUI';
 
 type Mode = 'dawn' | 'dusk';
 const ICON: Record<Tag['kind'], string> = { project: '🏗', person: '🏮', bet: '⛵', none: '·' };
@@ -24,6 +28,8 @@ export function DayCheckin(props: {
   owner: string;
   /** Open quests from the vault, most urgent first: the board Dawn picks from. */
   quests: Quest[];
+  questTotal: number;
+  vaultName: string;
   ctx: TagContext;
   readOnly: boolean;
   /** Which tab to open on, decided by the server from the configured timezone. */
@@ -31,6 +37,14 @@ export function DayCheckin(props: {
   /** A check-in is still pending today: offer "Skip today". */
   canSkip?: boolean;
   atlas: { active: number; weedy: number; docked: string | null };
+  /** Finished sessions waiting for a yes, batched at Dusk. */
+  scrolls?: Scroll[];
+  /** Waiting sessions whose transcripts the agent will delete soon. */
+  retention?: { count: number; daysLeft: number; ids: string[] } | null;
+  /** Today's worldview interview question (only when the user opted in). */
+  question?: { index: number; text: string } | null;
+  /** What Atlas did overnight. */
+  night?: OwnerReportData | null;
 }) {
   const { day, ctx, readOnly, initialMode, canSkip } = props;
   const draftKey = `mp-draft-${day.date}`;
@@ -110,16 +124,21 @@ export function DayCheckin(props: {
       {readOnly && <p className="tiny muted" style={{ margin: 0 }}>Read-only mode: nothing will be saved.</p>}
       {error && <p className="error" role="alert" style={{ margin: 0 }}>{error}</p>}
 
+      {mode === 'dawn' && props.night && <OwnerReport r={props.night} />}
+      {mode === 'dawn' && props.retention && <RetentionNotice {...props.retention} onReview={() => setMode('dusk')} />}
+      {mode === 'dusk' && <ScrollBatch scrolls={props.scrolls ?? []} />}
+      {mode === 'dusk' && props.question && <InterviewQuestion {...props.question} />}
+
       {mode === 'dawn' && (
         <div className={`ci-cols ci-dawn${day.locked ? ' one' : ''}`}>
           {!day.locked && (
             <section className="panel card">
               <h3 className="ci-h">Quest board</h3>
-              <p className="sub">Open tasks from your vault, most urgent first. Click one to add it to today.</p>
+              <p className="sub">Open tasks from your vault, most urgent first. Click one to add it to today, or close it if it’s already settled.</p>
               {board.length ? (
                 <ul className="ci-list">
                   {board.map((q) => (
-                    <li key={q.id}>
+                    <li key={q.id} className="ci-qrow">
                       <button className="ci-quest" onClick={() => setItems([...items, q.text])} aria-label={`Add to today: ${q.text}`}>
                         <span className="ci-qmain">
                           <b>{q.isPrivate ? '🔒 ' : ''}{q.text}</b>
@@ -131,6 +150,14 @@ export function DayCheckin(props: {
                         </span>
                         <span className="ci-arrow" aria-hidden="true">→</span>
                       </button>
+                      {!readOnly && (
+                        <span className="ci-qclose">
+                          <button className="btn tiny-btn good" disabled={pending} onClick={() => run(() => completeQuest(q.id, q.text))}
+                            aria-label={`Already done: ${q.text}`} title="Already done: ticks it in its note">✓ Done</button>
+                          <button className="btn tiny-btn" disabled={pending} onClick={() => run(() => dropQuest(q.id, q.text))}
+                            aria-label={`Not doing: ${q.text}`} title="Not doing it: marks it cancelled in its note">✗ Drop</button>
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -216,6 +243,13 @@ export function DayCheckin(props: {
               </ul>
             ) : <p className="tiny muted" style={{ margin: 0 }}>{items.length ? 'Lock the plan at Dawn to review it here.' : 'No plan this morning.'}</p>}
             <ListInput title="Also done, not planned" placeholder="Something you finished" list={extra} set={setExtra} pill={pill} />
+            {/* Ticking one here marks the task done in its own note, right away. */}
+            {props.quests.length > 0 && (
+              <details className="ci-fold">
+                <summary>Finished something from the quest board? <span className="muted">({props.quests.length})</span></summary>
+                <QuestBoard quests={props.quests} total={props.questTotal} vaultName={props.vaultName} readOnly={readOnly} />
+              </details>
+            )}
           </section>
           <section className="panel card">
             <ListInput title="Who did you talk to?" placeholder="Names, comma separated" list={people} set={setPeople} pill={pill} first />

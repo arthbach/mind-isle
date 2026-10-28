@@ -2,7 +2,7 @@
 import path from 'node:path';
 import type { Mapping } from './types';
 
-export interface ProjectRef { id: string; name: string; rel: string; aliases: string[]; repos: string[]; repoUrls: string[] }
+export interface ProjectRef { id: string; name: string; rel: string; aliases: string[]; repos: string[]; repoUrls: string[]; /** The note's own `summaries:` mode, if set. */ summaries?: string | null }
 export interface Decision { project: string | null; by: 'user' | 'auto'; at: string; rejected?: string[] }
 
 export const THRESHOLD = { auto: 0.9, ask: 0.6 };

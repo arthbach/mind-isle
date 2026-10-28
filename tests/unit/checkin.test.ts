@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as checkin from '@/lib/checkin';
-import { splitFrontmatter } from '@/lib/vault/markdown';
+import { section, splitFrontmatter } from '@/lib/vault/markdown';
 import { getWorld } from '@/lib/world';
-import { DAILY, exists, read } from './helpers';
+import { DAILY, exists, read, write } from './helpers';
 
 // The tests in this file run in order against one throwaway vault, pinned to 2026-10-26 08:00 UTC.
 describe('the daily loop', () => {
@@ -82,6 +82,33 @@ describe('board actions', () => {
     await expect(checkin.completeQuest(q!.id, 'Something else')).rejects.toThrow(/changed/);
     await checkin.completeQuest(q!.id, q!.text);
     expect(read(q!.path)).toContain('- [x] Draw the winter tileset');
+  });
+
+  it('drops a quest as cancelled, and it leaves the board', async () => {
+    const w = await getWorld();
+    const q = w.quests.find((x) => x.text.startsWith('Write the pricing page copy'))!;
+    await checkin.dropQuest(q.id, q.text);
+    expect(read(q.path)).toContain('- [-] Write the pricing page copy #lighthouse ❌ 2026-10-26');
+    expect((await getWorld()).quests.some((x) => x.text.startsWith('Write the pricing page copy'))).toBe(false);
+  });
+
+  it('logs a past project update: dated line, last_activity only forward, status if given', async () => {
+    const rel = '03 Projects/Lighthouse App/Lighthouse App.md';
+    await expect(checkin.logProjectUpdate({ rel, text: 'x', date: '2026-11-01' })).rejects.toThrow(/future/);
+    await expect(checkin.logProjectUpdate({ rel: '04 People/Rosa Martín.md', text: 'x', date: '2026-10-01' })).rejects.toThrow(/Not a project/);
+    write(rel, read(rel).replace(/last_activity: .*/, 'last_activity: 2026-10-20'));
+    await checkin.logProjectUpdate({ rel, text: 'Beta invite sent', date: '2026-10-24' });
+    await checkin.logProjectUpdate({ rel, text: 'Old milestone', date: '2026-09-01' });
+    await checkin.logProjectUpdate({ rel, text: 'Old milestone', date: '2026-09-01' });
+    let raw = read(rel);
+    expect(splitFrontmatter(raw).fm.last_activity).toBe('2026-10-24');
+    expect(section(splitFrontmatter(raw).body, 'log', true).trim()).toBe('- 2026-10-24 Beta invite sent\n- 2026-09-01 Old milestone');
+    await checkin.logProjectUpdate({ rel, text: 'Paused for the holidays', date: '2026-10-25', status: 'paused' });
+    raw = read(rel);
+    expect(splitFrontmatter(raw).fm).toMatchObject({ status: 'paused', last_activity: '2026-10-25' });
+    const p = (await getWorld()).projects.find((x) => x.path === rel)!;
+    expect(p.status).toBe('paused');
+    expect(p.log.map((u) => u.text)).toEqual(['Paused for the holidays', 'Beta invite sent', 'Old milestone']);
   });
 
   it('only lights lanterns on person notes', async () => {

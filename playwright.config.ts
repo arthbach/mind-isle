@@ -49,7 +49,11 @@ export default defineConfig({
     { command: 'npx next start -p 3302', url: `${EVENING}/login`, env: env('2026-10-26T19:00:00Z'), reuseExistingServer: false, timeout: 60_000 },
     {
       command: 'npx next start -p 3303', url: `${SESSIONS}/login`, reuseExistingServer: false, timeout: 60_000,
-      env: { ...env('2026-10-26T19:00:00Z'), PALACE_CHECKIN_GATE: 'off', PALACE_DATA_DIR: path.resolve('.palace-e2e/data-sessions') },
+      env: {
+        ...env('2026-10-26T19:00:00Z'), PALACE_CHECKIN_GATE: 'off', PALACE_DATA_DIR: path.resolve('.palace-e2e/data-sessions'),
+        // Never a real agent CLI in tests: summaries go to a fake that answers instantly.
+        PALACE_SUMMARISER_CMD: JSON.stringify([process.execPath, path.resolve('tests/fixtures/fake-summariser.mjs')]),
+      },
     },
   ],
 });
