@@ -114,8 +114,9 @@ test('three running sessions are three workers, and a permission request shows u
 test('turning the source off removes its sessions and its hooks', async ({ page }) => {
   await page.goto(`${SESSIONS}/settings/agents`);
   await page.locator('[data-source="claude-code"]').getByRole('button', { name: 'Turn off' }).click();
-  await expect(page.locator('[data-source="claude-code"]')).toContainText('off');
-  expect(settings()).not.toContain('mind-palace-hook');
+  // Wait for the action itself: "off" alone already matches the "Turn off" button.
+  await expect(page.locator('[data-source="claude-code"]').getByRole('button', { name: 'Allow' })).toBeVisible();
+  await expect.poll(settings).not.toContain('mind-palace-hook');
   expect(settings()).toContain('other-tool notify');
   await page.goto(SESSIONS);
   await expect(page.locator('canvas[data-live]')).toHaveAttribute('data-live', '');

@@ -110,6 +110,9 @@ export interface CliRun { command: string; args: string[]; label: string }
 
 /** Where a CLI is installed: the PATH, then the usual install folders (a server started from a GUI may have a short PATH). */
 export async function findCli(cmd: SummaryCli): Promise<string | null> {
+  // PALACE_SUMMARISER_CMD stands in for either CLI (see cliCommand).
+  const custom = process.env.PALACE_SUMMARISER_CMD;
+  if (custom) return (JSON.parse(custom) as string[])[0];
   const dirs = [
     ...(process.env.PATH ?? '').split(path.delimiter),
     path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.npm-global', 'bin'), path.join(os.homedir(), '.bun', 'bin'),
